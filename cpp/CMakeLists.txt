@@ -1,3 +1,4 @@
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../cmake")
 # Setting it to a range tells it that it supports the features on the newer
 # versions as well, avoiding setting policies.
 cmake_minimum_required(VERSION 3.16...3.25)
@@ -69,8 +70,8 @@ endif()
 # Variable to check that people use the good file
 set(TOP_CMAKE_WAS_SOURCED TRUE)
 
-# set module path
-set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/../../cmake)
+# set module path - CRITICAL: ensure cmake modules are found
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../cmake")
 
 # Write binaries to the bin directory under the build directory.
 # This makes it simple to run development builds directly out of the build directory.
@@ -190,7 +191,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     )
 
     # Generate Info.plist with version from CMake
-    configure_file("${CMAKE_SOURCE_DIR}/Info.plist.in" "${CMAKE_BINARY_DIR}/Info.plist" @ONLY)
+    configure_file("${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in" "${CMAKE_BINARY_DIR}/Info.plist" @ONLY)
 
     add_executable(iPSX2 ios_main.mm iPSX2Bridge.mm ${SWIFT_SOURCES})
     set_target_properties(iPSX2 PROPERTIES
