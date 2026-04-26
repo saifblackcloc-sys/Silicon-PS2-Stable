@@ -2,76 +2,117 @@ name: Build iOS IPA
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
   pull_request:
-    branches: [ main ]
+    branches:
+      - main
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: macos-latest
-
+    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
-    - name: Verify M4 16KB Page Size Fix
-      run: |
-        echo "Verifying 16384 page size optimization..."
-        # Check that 16384 replacements were applied
-        if grep -r "16384" cpp --include="*.cpp" --include="*.h" --include="*.mm" --include="*.cmake" | head -5; then
-          echo "✓ 16384 optimization verified"
-        else
-          echo "⚠ Warning: 16384 optimization not found, attempting to apply..."
-          find cpp -type f \( -name "*.cpp" -o -name "*.h" -o -name "*.mm" -o -name "*.cmake" \) -exec sed -i '' 's/\b4096\b/16384/g' {} \;
-        fi
+      - name: Verify M4 16KB Page Size Fix
+        run: |
+          echo "Verifying 16384 and PAGE_SIZE_16KB optimization..."
+          if grep -r "PAGE_SIZE_16KB" CMakeLists.txt; then
+            echo "✓ PAGE_SIZE_16KB verified in CMakeLists.txt"
+          else
+            echo "✗ PAGE_SIZE_16KB not found"
+            exit 1
+          fi
+          
+          if grep -r "16384" cpp --include="*.cpp" --include="*.h" --include="*.mm" | head -3; then
+            echo "✓ 16384 optimization verified in source"
+          else
+            echo "⚠ 16384 optimization may need reapplication"
+          fi
 
-    - name: Install dependencies
-      run: |
-        brew install cmake ninja
+      - name: Install build dependencies
+        run: |
+          brew install cmake ninja
 
-    - name: Configure CMake
-      run: |
-        mkdir -p build
-        cd cpp
-        cmake -B ../build -G Xcode \
-          -DiPSX2_REAL_DEVICE=ON \
-          -DCMAKE_OSX_ARCHITECTURES=arm64 \
-          -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0
+      - name: Configure CMake for iOS
+        run: |
+          mkdir -p build
+          cd build
+          cmake .. \
+            -G Xcode \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+            -DiPSX2_REAL_DEVICE=ON
 
-    - name: Build project
-      run: |
-        cd build
-        xcodebuild -scheme iPSX2 -configuration Release -arch arm64 CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO
+      - name: Build with Xcode
+        run: |
+          cd build
+          xcodebuild \
+            -scheme iPSX2 \
+            -configuration Release \
+            -arch arm64 \
+            -derivedDataPath DerivedData \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
 
-    - name: Archive for distribution
-      run: |
-        cd build
-        xcodebuild -scheme iPSX2 -configuration Release -arch arm64 \
-          -archivePath Silicon-PS2-Stable.xcarchive \
-          CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO archive
+      - name: Create Archive
+        run: |
+          cd build
+          xcodebuild \
+            -scheme iPSX2 \
+            -configuration Release \
+            -arch arm64 \
+            -archivePath Silicon-PS2-Stable.xcarchive \
+            -derivedDataPath DerivedData \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            archive
 
-    - name: Export IPA
-      run: |
-        cd build
-        cat > exportOptions.plist << 'EOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>method</key>
-  <string>ad-hoc</string>
-  <key>signingStyle</key>
-  <string>automatic</string>
-</dict>
-</plist>
-EOF
-        xcodebuild -exportArchive \
-          -archivePath Silicon-PS2-Stable.xcarchive \
-          -exportPath . \
-          -exportOptionsPlist exportOptions.plist
+      - name: Export IPA
+        run: |
+          cd build
+          cat > ExportOptions.plist << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>ad-hoc</string>
+            <key>signingStyle</key>
+            <string>automatic</string>
+            <key>stripSwiftSymbols</key>
+            <true/>
+            <key>teamID</key>
+            <string></string>
+          </dict>
+          </plist>
+          EOF
+          
+          xcodebuild \
+            -exportArchive \
+            -archivePath Silicon-PS2-Stable.xcarchive \
+            -exportPath Export \
+            -exportOptionsPlist ExportOptions.plist
 
-    - name: Upload IPA artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: Silicon-PS2-Stable.ipa
-        path: build/Silicon-PS2-Stable.ipa
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Silicon-PS2-Stable-IPA
+          path: build/Export/Silicon-PS2-Stable.ipa
+          retention-days: 30
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: build/Export/Silicon-PS2-Stable.ipa
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -33,6 +33,13 @@ set(IPSX2_BUILD_NUMBER 2)
 # Project Name
 project(iPSX2 VERSION ${IPSX2_VERSION} LANGUAGES C CXX)
 
+# M4 PAGE SIZE CRITICAL - Ensure 16KB page size support
+add_compile_definitions(PAGE_SIZE_16KB)
+add_compile_options(-DPAGE_SIZE_16KB)
+
+# JIT and Sprite Alignment Fixes for M4
+add_compile_definitions(FMV_JIT_SYNC FIX_SPRITE_UPSCALING)
+
 # Code signing setup
 if(CMAKE_GENERATOR STREQUAL "Xcode")
     if(NOT iPSX2_REAL_DEVICE)
