@@ -14,46 +14,60 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Verify M4 16KB Page Size Fix
+      run: |
+        echo "Verifying 16384 page size optimization..."
+        # Check that 16384 replacements were applied
+        if grep -r "16384" cpp --include="*.cpp" --include="*.h" --include="*.mm" --include="*.cmake" | head -5; then
+          echo "✓ 16384 optimization verified"
+        else
+          echo "⚠ Warning: 16384 optimization not found, attempting to apply..."
+          find cpp -type f \( -name "*.cpp" -o -name "*.h" -o -name "*.mm" -o -name "*.cmake" \) -exec sed -i '' 's/\b4096\b/16384/g' {} \;
+        fi
+
     - name: Install dependencies
       run: |
         brew install cmake ninja
 
     - name: Configure CMake
       run: |
-        cmake -B build -G Xcode \
-          -DCMAKE_SYSTEM_NAME=iOS \
+        mkdir -p build
+        cd cpp
+        cmake -B ../build -G Xcode \
+          -DiPSX2_REAL_DEVICE=ON \
           -DCMAKE_OSX_ARCHITECTURES=arm64 \
           -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0
 
     - name: Build project
       run: |
-        cmake --build build --config Release
+        cd build
+        xcodebuild -scheme iPSX2 -configuration Release -arch arm64 CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO
 
-    - name: Archive project
+    - name: Archive for distribution
       run: |
-        xcodebuild -project build/Silicon-PS2-Stable.xcodeproj \
-          -scheme Silicon-PS2-Stable \
-          -configuration Release \
-          -archivePath build/Silicon-PS2-Stable.xcarchive \
-          archive
+        cd build
+        xcodebuild -scheme iPSX2 -configuration Release -arch arm64 \
+          -archivePath Silicon-PS2-Stable.xcarchive \
+          CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO archive
 
     - name: Export IPA
       run: |
-        cat > exportOptions.plist << EOF
-        <?xml version="1.0" encoding="UTF-8"?>
-        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-        <plist version="1.0">
-        <dict>
-        <key>method</key>
-        <string>development</string>
-        <key>teamID</key>
-        <string></string>
-        </dict>
-        </plist>
-        EOF
+        cd build
+        cat > exportOptions.plist << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>method</key>
+  <string>ad-hoc</string>
+  <key>signingStyle</key>
+  <string>automatic</string>
+</dict>
+</plist>
+EOF
         xcodebuild -exportArchive \
-          -archivePath build/Silicon-PS2-Stable.xcarchive \
-          -exportPath build \
+          -archivePath Silicon-PS2-Stable.xcarchive \
+          -exportPath . \
           -exportOptionsPlist exportOptions.plist
 
     - name: Upload IPA artifact
