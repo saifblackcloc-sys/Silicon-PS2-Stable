@@ -1,0 +1,63 @@
+name: Build iOS IPA
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        brew install cmake ninja
+
+    - name: Configure CMake
+      run: |
+        cmake -B build -G Xcode \
+          -DCMAKE_SYSTEM_NAME=iOS \
+          -DCMAKE_OSX_ARCHITECTURES=arm64 \
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0
+
+    - name: Build project
+      run: |
+        cmake --build build --config Release
+
+    - name: Archive project
+      run: |
+        xcodebuild -project build/Silicon-PS2-Stable.xcodeproj \
+          -scheme Silicon-PS2-Stable \
+          -configuration Release \
+          -archivePath build/Silicon-PS2-Stable.xcarchive \
+          archive
+
+    - name: Export IPA
+      run: |
+        cat > exportOptions.plist << EOF
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+        <key>method</key>
+        <string>development</string>
+        <key>teamID</key>
+        <string></string>
+        </dict>
+        </plist>
+        EOF
+        xcodebuild -exportArchive \
+          -archivePath build/Silicon-PS2-Stable.xcarchive \
+          -exportPath build \
+          -exportOptionsPlist exportOptions.plist
+
+    - name: Upload IPA artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Silicon-PS2-Stable.ipa
+        path: build/Silicon-PS2-Stable.ipa
